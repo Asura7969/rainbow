@@ -8,10 +8,12 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, time::Duration};
+use std::any::Any;
 use std::borrow::BorrowMut;
 use std::convert::Infallible;
 use std::error::Error;
 use axum::http::uri::PathAndQuery;
+use hyper::http;
 use serde_json::{json, Value};
 use tower_http::{classify::ServerErrorsFailureClass,
                  trace::TraceLayer};
@@ -35,7 +37,9 @@ async fn main() {
         ))
         .with(tracing_subscriber::fmt::layer())
         .init();
-
+    // let app = Router::new()
+    //     .route("/create_user", post(create_user))
+    //     .route("/user_by_id/:id", get(query_user_by_id));
     // let app = Router::new()
         // .route("/", get(usage))
         // .route("/err/:id", get(error_handler))
@@ -92,31 +96,54 @@ async fn main() {
         //         ),
         // );
 
-    let service = tower::service_fn(move |req: Request<Body>| {
-        // let router_svc = app.clone();
+    let service = service_fn(move |req: Request<Body>| {
         async move {
 
-            for (h_name, h_value) in req.headers() {
-                println!("header name: {:?}, header value: {:?}", h_name, h_value);
-            }
-            let (mut parts, body) = req.into_parts();
+            match req.headers().get(http::header::CONTENT_TYPE) {
+                Some(application_json) if application_json.to_str().unwrap().eq(mime::APPLICATION_JSON.as_ref()) => {
 
-            let body_bytes = hyper::body::to_bytes(body).await.unwrap();
-            println!("body: {:?}", body_bytes);
-            let uri = parts.uri;
-            if let Some(path_and_query) = uri.path_and_query() {
-                println!("path: {}", path_and_query.path());
-                if let Some(q) = path_and_query.query() {
-                    println!("query: {}", q);
+                    let appid = match req.headers().get("appid") {
+                        Some(appid) => {
+                            match String::from_utf8(appid.as_bytes().to_vec()) {
+                                Ok(id) => Ok(id),
+                                Err(_e) => Err("appid parsing error")
+                            }
+                        }
+                        None => {
+                            Err("Header does not exist appid")
+                        }
+                    }?;
+                    println!("appid: {}", appid);
+
+                    // 1、获取appid 对应的路由信息
+                    //    1.1 获取appid 元数据信息，是否鉴权、限流、协议转换等
+                    // 2、解析url，获取 header、query、body，解析参数
+
+                    let (mut parts, body) = req.into_parts();
+
+                    let body_bytes = hyper::body::to_bytes(body).await.unwrap();
+                    println!("body: {:?}", body_bytes);
+                    let uri = parts.uri;
+                    if let Some(path_and_query) = uri.path_and_query() {
+                        println!("path: {}", path_and_query.path());
+                        if let Some(q) = path_and_query.query() {
+                            println!("query: {}", q);
+                        }
+                    }
+                    let res = response_body("",
+                                            http::StatusCode::OK.as_u16(),
+                                            None);
+                    Ok::<_, Infallible>(res)
+
+
+                }
+                _ => {
+                    let res = response_body("Only accept requests with application_json",
+                                  http::StatusCode::BAD_REQUEST.as_u16(),
+                                  None);
+                    Ok::<_, Infallible>(res)
                 }
             }
-            let res = Response::new(Body::from("Hi from `GET /`"));
-            Ok::<_, Infallible>(res)
-            // if req.method() == Method::CONNECT {
-            //     proxy(req).await
-            // } else {
-            //     router_svc.oneshot(req).await.map_err(|err| match err {})
-            // }
         }
     });
 
@@ -129,3 +156,11 @@ async fn main() {
 }
 
 
+fn response_body(message: &str, code: u16, data: Option<&dyn Any>) -> Response<Body> {
+    let payload = json!({
+        "message": message,
+        "code": code,
+        "data": data,
+    });
+    Response::new(Body::from(axum::Json::from(payload).as_str().unwrap()))
+}
