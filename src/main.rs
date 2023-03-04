@@ -1,3 +1,6 @@
+mod error;
+mod resp;
+
 use axum::{
     body::{Bytes, Body},
     http::{Request, HeaderMap, StatusCode, Method, Uri},
@@ -23,6 +26,11 @@ use tower::{make::Shared, ServiceExt};
 use tracing::{info, warn, error, Span};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
+use tonic::client::Grpc;
+use tonic::transport::{Channel, Endpoint};
+use crate::error::error::ApiError;
+use crate::error::error::ApiError::BadRequestError;
+use crate::resp::resp::IResponse;
 
 #[tokio::main]
 async fn main() {
@@ -98,22 +106,32 @@ async fn main() {
 
     let service = service_fn(move |req: Request<Body>| {
         async move {
+            if req.headers().get(http::header::CONTENT_TYPE)
+                .filter(|application_json| {
+                    application_json.to_str().map(|json| json.eq(mime::APPLICATION_JSON.as_ref())).is_ok()
+                }).is_none() {
 
-            match req.headers().get(http::header::CONTENT_TYPE) {
-                Some(application_json) if application_json.to_str().unwrap().eq(mime::APPLICATION_JSON.as_ref()) => {
+                let body = Json(json!({
+                    "code": StatusCode::BAD_REQUEST.as_u16(),
+                    "msg": "Header does not exist appid",
+                    "data": ""
+                }));
 
-                    let appid = match req.headers().get("appid") {
-                        Some(appid) => {
-                            match String::from_utf8(appid.as_bytes().to_vec()) {
-                                Ok(id) => Ok(id),
-                                Err(_e) => Err("appid parsing error")
-                            }
-                        }
-                        None => {
-                            Err("Header does not exist appid")
-                        }
-                    }?;
-                    println!("appid: {}", appid);
+                Ok::<Response, Infallible>((StatusCode::BAD_REQUEST, body).into_response())
+            } else {
+                let appid = req.headers()
+                    .get("appid")
+                    .and_then(|v| v.to_str().ok());
+
+                if appid.is_none() {
+                    let body = Json(json!({
+                        "code": StatusCode::BAD_REQUEST.as_u16(),
+                        "msg": "Appid parsing failed or missing",
+                        "data": ""
+                    }));
+                    Ok::<Response, Infallible>((StatusCode::BAD_REQUEST, body).into_response())
+                } else {
+                    println!("appid: {}", appid.unwrap());
 
                     // 1、获取appid 对应的路由信息
                     //    1.1 获取appid 元数据信息，是否鉴权、限流、协议转换等
@@ -130,20 +148,16 @@ async fn main() {
                             println!("query: {}", q);
                         }
                     }
-                    let res = response_body("",
-                                            http::StatusCode::OK.as_u16(),
-                                            None);
-                    Ok::<_, Infallible>(res)
-
-
-                }
-                _ => {
-                    let res = response_body("Only accept requests with application_json",
-                                  http::StatusCode::BAD_REQUEST.as_u16(),
-                                  None);
-                    Ok::<_, Infallible>(res)
+                    let body = Json(json!({
+                        "code": StatusCode::OK.as_u16(),
+                        "msg": "Ok",
+                        "data": ""
+                    }));
+                    Ok::<Response, Infallible>((StatusCode::OK, body).into_response())
                 }
             }
+
+
         }
     });
 
@@ -156,11 +170,73 @@ async fn main() {
 }
 
 
-fn response_body(message: &str, code: u16, data: Option<&dyn Any>) -> Response<Body> {
-    let payload = json!({
-        "message": message,
-        "code": code,
-        "data": data,
-    });
-    Response::new(Body::from(axum::Json::from(payload).as_str().unwrap()))
-}
+
+
+
+// async fn test_start() -> Result<(), Box<dyn Error>> {
+//     // 服务地址与接口信息应从外部获取, 此处为测试
+//     let addr = Endpoint::from_static("http://127.0.0.1:9091");
+//     let mut client_grpc: Grpc<Channel> = connect(addr.clone()).await;
+//     /// key: 服务名 + 接口 + 方法名, value: request json元数据
+//     ///
+//     /// proto 文件定义内容:
+//     /// ```
+//     /// message HelloRequest {
+//     ///   string name = 1;
+//     ///   int32 age = 2;
+//     ///   map<string, string> tags = 3;
+//     /// }
+//     /// ```
+//     /// request json元数据
+//     ///
+//     /// type: grpc类型, path: http请求中的参数路径(JsonPath)
+//     /// ```
+//     /// {
+//     ///     "name": {"type": "string", "path": "$.path.name"},
+//     ///     "age": {"type": "int32", "path": "$.query.age"},
+//     ///     "tags": {
+//     ///         "type": "map",
+//     ///         "pathMap": {
+//     ///             "key1": "$.body.desc",
+//     ///             "key2": "$.body.orderId",
+//     ///             "key3": "$.body.name",
+//     ///         }
+//     ///     }
+//     /// }
+//     /// ```
+//     unary(&mut client_grpc, "/com.asura.grpc.HelloService/SayHello")
+// }
+//
+// async fn unary<T>(client: &mut Grpc<Channel>,
+//                   method: &'static str) -> Result<tonic::Response<T>, tonic::Status> {
+//     client
+//         .ready()
+//         .await
+//         .map_err(|e| {
+//             tonic::Status::new(
+//                 tonic::Code::Unknown,
+//                 format!("Service was not ready: {}", e.into()),
+//             )
+//         })?;
+//     let codec = tonic::codec::ProstCodec::default();
+//     let path = http::uri::PathAndQuery::from_static(method);
+//     client.unary(request.into_request(), path, codec).await
+// }
+//
+//
+// async fn connect<D>(dst: D) -> Grpc<Channel>
+//     where
+//         D: std::convert::TryInto<tonic::transport::Endpoint>,
+//         D::Error: Into<Box<dyn std::error::Error + Send + Sync + 'static>>,
+// {
+//     let channel = Endpoint::new(dst)?.connect().await?;
+//     Grpc::new(channel)
+// }
+// fn response_body(message: &str, code: u16, data: Option<&dyn Any>) -> Response<Body> {
+//     let payload = json!({
+//         "message": message,
+//         "code": code,
+//         "data": data,
+//     });
+//     Response::new(Body::from(axum::Json::from(payload).as_str().unwrap()))
+// }

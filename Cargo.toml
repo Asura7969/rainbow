@@ -21,3 +21,10 @@ redis = { version = "0.17.0", features = ["tokio-comp"] }
 bytes = "1.1.0"
 hyper = "0.14.24"
 anyhow = "1.0"
+thiserror = "1.0"
+tonic = { version = "0.8" }
+prost = "0.11"
+
+[build-dependencies]
+tonic-build = { version = "0.8", features = ["prost"] }
+anyhow = "1.0"
