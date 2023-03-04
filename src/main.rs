@@ -117,7 +117,7 @@ async fn main() {
                     "data": ""
                 }));
 
-                Ok::<Response, Infallible>((StatusCode::BAD_REQUEST, body).into_response())
+                Ok::<Response, Infallible>(IResponse::<String>::bad_request("Header does not exist appid").into_response())
             } else {
                 let appid = req.headers()
                     .get("appid")
@@ -129,7 +129,8 @@ async fn main() {
                         "msg": "Appid parsing failed or missing",
                         "data": ""
                     }));
-                    Ok::<Response, Infallible>((StatusCode::BAD_REQUEST, body).into_response())
+
+                    Ok::<Response, Infallible>(IResponse::<String>::bad_request("Appid parsing failed or missing").into_response())
                 } else {
                     println!("appid: {}", appid.unwrap());
 
@@ -153,7 +154,8 @@ async fn main() {
                         "msg": "Ok",
                         "data": ""
                     }));
-                    Ok::<Response, Infallible>((StatusCode::OK, body).into_response())
+
+                    Ok::<Response, Infallible>(IResponse::<String>::ok(Some("".to_string())).into_response())
                 }
             }
 
