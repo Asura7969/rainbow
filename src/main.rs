@@ -7,14 +7,17 @@ use axum::{
     error_handling::{HandleError, HandleErrorLayer},
     response::{Html, Response, IntoResponse},
     routing::{get, post, any_service}, Json, Router, BoxError,
-    extract::{Extension, Path}
+    extract::{Extension, Path},
+    RequestPartsExt
 };
 use serde::{Deserialize, Serialize};
 use std::{net::SocketAddr, time::Duration};
 use std::any::Any;
 use std::borrow::BorrowMut;
+use std::collections::HashMap;
 use std::convert::Infallible;
 use std::error::Error;
+use axum::extract::Query;
 use axum::http::uri::PathAndQuery;
 use hyper::http;
 use serde_json::{json, Value};
@@ -48,61 +51,6 @@ async fn main() {
     // let app = Router::new()
     //     .route("/create_user", post(create_user))
     //     .route("/user_by_id/:id", get(query_user_by_id));
-    // let app = Router::new()
-        // .route("/", get(usage))
-        // .route("/err/:id", get(error_handler))
-        // .route("/create_user", post(create_user))
-        // .route("/user_by_id/:id", get(query_user_by_id))
-        // .route("/user_by_name/:name", get(query_user_by_name))
-        // .route(
-        //     "/",
-        //     // Services whose response body is not `axum::body::BoxBody`
-        //     // can be wrapped in `axum::routing::any_service` (or one of the other routing filters)
-        //     // to have the response body mapped
-        //     any_service(service_fn(|req: Request<Body>| async move {
-        //         // let header_map = body.headers();
-        //         for (h_name, h_value) in req.headers() {
-        //             println!("header name: {:?}, header value: {:?}", h_name, h_value);
-        //         }
-        //         let (mut parts, body) = req.into_parts();
-        //
-        //         let body_bytes = hyper::body::to_bytes(body).await.unwrap();
-        //         println!("body: {:?}", body_bytes);
-        //         let uri = parts.uri;
-        //         if let Some(path_and_query) = uri.path_and_query() {
-        //             println!("path: {}", path_and_query.path());
-        //             if let Some(q) = path_and_query.query() {
-        //                 println!("query: {}", q);
-        //             }
-        //         }
-        //
-        //         let res = Response::new(Body::from("Hi from `GET /`"));
-        //         Ok::<_, Infallible>(res)
-        //     }))
-        // )
-        // .layer(Extension(AppState { pool }))
-        // .layer(
-        //     TraceLayer::new_for_http()
-        //         .on_request(|request: &Request<_>, _span: &Span| {
-        //             info!("started {} {}", request.method(), request.uri().path())
-        //         })
-        //         .on_response(|_response: &Response, latency: Duration, _span: &Span| {
-        //             info!("response generated in {:?}", latency)
-        //         })
-        //         .on_body_chunk(|chunk: &Bytes, _latency: Duration, _span: &Span| {
-        //             info!("sending {} bytes", chunk.len())
-        //         })
-        //         .on_eos(
-        //             |_trailers: Option<&HeaderMap>, stream_duration: Duration, _span: &Span| {
-        //                 warn!("stream closed after {:?}", stream_duration)
-        //             },
-        //         )
-        //         .on_failure(
-        //             |_error: ServerErrorsFailureClass, _latency: Duration, _span: &Span| {
-        //                 error!("something went wrong")
-        //             },
-        //         ),
-        // );
 
     let service = service_fn(move |req: Request<Body>| {
         async move {
@@ -137,6 +85,36 @@ async fn main() {
                     // 2、解析url，获取 header、query、body，解析参数
 
                     let (mut parts, body) = req.into_parts();
+
+                    let query_params =
+                        parts.extract::<Query<HashMap<String, String>>>().await.ok();
+
+                    match query_params {
+                        Some(map) => {
+                            println!("query_params : ");
+                            for (k, v) in map.0 {
+                                println!("  k: {k}, v: {v}")
+                            }
+                        },
+                        _ => {
+                            println!("query_params is none")
+                        }
+                    }
+
+                    let path_params =
+                        parts.extract::<Path<HashMap<String, String>>>().await.ok();
+
+                    match path_params {
+                        Some(map) => {
+                            println!("path_params : ");
+                            for (k, v) in map.0 {
+                                println!("  k: {k}, v: {v}")
+                            }
+                        },
+                        _ => {
+                            println!("path_params is none")
+                        }
+                    }
 
                     let body_bytes = hyper::body::to_bytes(body).await.unwrap();
                     println!("body: {:?}", body_bytes);
