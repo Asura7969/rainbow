@@ -1,3 +1,5 @@
+#![feature(box_into_inner)]
+
 mod error;
 mod resp;
 mod path;

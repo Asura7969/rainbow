@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 use std::collections::HashMap;
+use std::collections::btree_map::BTreeMap;
 use std::ops::Add;
 use std::ptr::NonNull;
 use regex::Regex;
@@ -8,35 +9,61 @@ use regex::Regex;
 const COLON: &'static str = ":";
 
 struct PathTree {
-    root: Option<PathNode>,
+    root: Option<Box<PathNode>>,
 }
 
 
 impl PathTree {
 
-    fn add_node(&mut self, other: PathNode) {
+    fn add_node(&mut self, mut other: PathNode) {
         if let Some(head) = &mut self.root {
             head.add_node(other);
         } else {
-            self.root = Some(other);
+            self.root = Some(Box::new(other));
+        }
+    }
+
+    fn rebalance(&mut self) {
+
+    }
+
+    fn height(&self) {
+
+    }
+
+    fn println_node(&self) {
+        match &self.root {
+            Some(head) => unsafe {
+                head.println_path()
+            },
+            None => println!("path tree is empty")
+        }
+    }
+}
+
+impl Default for PathTree {
+    fn default() -> Self {
+        PathTree {
+            root: None
         }
     }
 }
 
 struct PathNode {
-    path: String,
+    path: &'static str,
     regex: Regex,
-    left: Option<NonNull<PathNode>>,
-    right: Option<NonNull<PathNode>>,
+    left: Option<Box<PathNode>>,
+    right: Option<Box<PathNode>>,
     level: usize,
-    tags:Vec<String>
+    tags:Vec<String>,
+    len: usize,
 }
 
 
 impl PathNode {
 
     // route_path: /getById/:id
-    fn new(path: &str) -> PathNode {
+    fn new(path: &'static str) -> PathNode {
         let regex_vec = path.split("/")
             .filter(|s| !s.is_empty())
             .map(|s| {
@@ -64,21 +91,58 @@ impl PathNode {
         let regex = Regex::new(regex_str.as_str()).unwrap();
 
         PathNode {
-            path: path.to_owned(),
+            path,
             regex,
             left: None,
             right: None,
             level,
-            tags
+            tags,
+            len: 0
         }
+    }
+
+    // for test
+    fn println_path(&self) {
+        match &self.left {
+            Some(n) => {
+                n.println_path()
+            },
+             _ => {},
+        }
+        println!("size: {}, path: {}", self.level, self.path);
+        match &self.right {
+            Some(n) => {
+                n.println_path()
+            },
+            _ => {},
+        }
+    }
+
+    fn into_val(self: Box<Self>) -> PathNode {
+        Box::into_inner(self)
     }
 
     fn add_node(&mut self, mut other: PathNode) {
         if self < &mut other {
-
+            match &mut self.left {
+                Some(n) => {
+                    n.add_node(other);
+                },
+                None => {
+                    self.left = Some(Box::new(other));
+                },
+            }
         } else if self > &mut other {
-
-        } else if self == &mut other {
+            match &mut self.right {
+                Some(n) =>  unsafe {
+                    n.add_node(other);
+                },
+                None => {
+                    self.right = Some(Box::new(other));
+                },
+            }
+        }
+        else if self == &mut other {
             // do nothing
         }
     }
@@ -94,14 +158,10 @@ impl PathNode {
     pub(crate) fn pattern_and_extract(&self, path: &str, deep: usize)  -> Option<HashMap<String, String>> {
         if self.level == deep && self.regex.is_match(path) {
             self.extract_param(path)
-        } else if let Some(l_node) = self.left {
-            unsafe {
-                l_node.as_ref().pattern_and_extract(path, deep)
-            }
-        } else if let Some(r_node) = self.left {
-            unsafe {
-                r_node.as_ref().pattern_and_extract(path, deep)
-            }
+        } else if let Some(l_node) = &self.left {
+            l_node.pattern_and_extract(path, deep)
+        } else if let Some(r_node) = &self.right {
+            r_node.pattern_and_extract(path, deep)
         } else {
             None
         }
@@ -127,7 +187,7 @@ impl Eq for PathNode {}
 
 impl Ord for PathNode {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.level.cmp(&other.level)
+        self.path.cmp(&other.path)
     }
 }
 
@@ -135,14 +195,53 @@ impl PartialOrd for PathNode {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.path.cmp(&other.path))
     }
+
+    fn lt(&self, other: &Self) -> bool {
+        self.path < other.path
+    }
+
+    fn le(&self, other: &Self) -> bool {
+        self.path <= other.path
+    }
+
+    fn gt(&self, other: &Self) -> bool {
+        self.path > other.path
+    }
+
+    fn ge(&self, other: &Self) -> bool {
+        self.path >= other.path
+    }
 }
 
 impl PartialEq for PathNode {
     #[inline]
     fn eq(&self, other: &Self) -> bool {
-        PartialEq::eq(&self.path[..], &other.path[..])
+        self.path == other.path
     }
 }
+
+
+#[test]
+fn cmp_tree() {
+
+    let mut tree = PathTree::default();
+    let node1 = PathNode::new("/getById/:id");
+    let node2 = PathNode::new("/getByName/:name");
+    let node3 = PathNode::new("/:age/:name/:id");
+    let node4 = PathNode::new("/getByName/:name");
+    let node5 = PathNode::new("/asdfsdf/:id");
+    let node6 = PathNode::new("/acdfsdf/:id");
+
+    tree.add_node(node1);
+    tree.add_node(node2);
+    tree.add_node(node3);
+    tree.add_node(node4);
+    tree.add_node(node5);
+    tree.add_node(node6);
+
+    tree.println_node();
+}
+
 
 #[test]
 fn match_test() {
