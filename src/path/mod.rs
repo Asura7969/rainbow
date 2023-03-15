@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use std::cmp::{max, Ordering};
 use std::collections::HashMap;
 use std::collections::btree_map::BTreeMap;
 use std::ops::Add;
@@ -7,6 +7,9 @@ use regex::Regex;
 
 
 const COLON: &'static str = ":";
+
+/// 平衡因子
+const FACTOR: i64 = 1;
 
 struct PathTree {
     root: Option<Box<PathNode>>,
@@ -21,14 +24,55 @@ impl PathTree {
         } else {
             self.root = Some(Box::new(other));
         }
+
+        self.balance();
     }
 
-    fn rebalance(&mut self) {
+    fn balance(&mut self) {
+        let left_height = self.left_node_height();
+        let right_height = self.right_node_height();
+        let diff = left_height - right_height;
 
+        if diff.abs() > FACTOR {
+            if left_height > right_height {
+                // todo!() 右旋转
+            } else {
+                // todo!() 左旋转
+            }
+        }
     }
 
-    fn height(&self) {
 
+    fn height(&self) -> i64 {
+        let left_height = self.left_node_height();
+        let right_height = self.right_node_height();
+        max(left_height, right_height)
+    }
+
+    fn left_node_height(&self) -> i64 {
+        match &self.root {
+            Some(r) => {
+                if let Some(node) = &r.left {
+                    node.height()
+                } else {
+                    0
+                }
+            },
+            None => 0,
+        }
+    }
+
+    fn right_node_height(&self) -> i64 {
+        match &self.root {
+            Some(r) => {
+                if let Some(node) = &r.right {
+                    node.height()
+                } else {
+                    0
+                }
+            },
+            None => 0,
+        }
     }
 
     fn println_node(&self) {
@@ -98,6 +142,26 @@ impl PathNode {
             level,
             tags,
             len: 0
+        }
+    }
+
+    fn height(&self) -> i64 {
+        let lh = self.left_height();
+        let rh = self.right_height();
+        max(lh, rh)
+    }
+
+    fn left_height(&self) -> i64 {
+        match &self.left {
+            Some(ln) => ln.left_height() + 1,
+            None => 0,
+        }
+    }
+
+    fn right_height(&self) -> i64 {
+        match &self.left {
+            Some(ln) => ln.right_height() + 1,
+            None => 0,
         }
     }
 
