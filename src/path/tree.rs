@@ -17,35 +17,24 @@ struct PathTree {
 impl PathTree {
 
     fn add_node(&mut self, mut other: PathNode) {
-        if let Some(head) = &mut self.root {
-            head.add_node(other);
-        } else {
-            self.root = Some(Box::new(other));
+        let mut r = self.root.take();
+        match r {
+            Some(mut top) => {
+                let (p, c) = top.add_node(other);
+                self.root = balance(top, (p, c));
+            },
+            None => self.root = Some(Box::new(other)),
         }
 
-        self.balance();
-    }
-
-    fn balance(&mut self) {
-        let left_height = self.left_node_height();
-        let right_height = self.right_node_height();
-        let diff = left_height - right_height;
-
-        if diff.abs() > FACTOR {
-            if left_height > right_height {
-                // todo!() 右旋转
-            } else {
-                // todo!() 左旋转
-            }
-        }
+        // self.balance();
     }
 
 
     fn height(&self) -> i64 {
         let left_height = self.left_node_height();
-        println!("left height: {}", left_height);
+        // println!("left height: {}", left_height);
         let right_height = self.right_node_height();
-        println!("right height: {}", right_height);
+        // println!("right height: {}", right_height);
         max(left_height, right_height)
     }
 
@@ -93,6 +82,48 @@ impl Default for PathTree {
     }
 }
 
+fn balance(mut top: Box<PathNode>, (parent, cur): (i64, i64)) -> Option<Box<PathNode>> {
+    let mut top = match parent {
+        2 => {
+            if cur == 1 {
+                // 右右失衡
+                let mut new_top = top.right.take().unwrap();
+                new_top.left = Some(top);
+                new_top
+            } else if cur == -1 {
+                // 右左失衡
+                let mut cur = top.right.take().unwrap();
+                let mut new_top = cur.left.take().unwrap();
+                new_top.right = Some(cur);
+                new_top.left = Some(top);
+                new_top
+            } else {
+                top
+            }
+        },
+        -2 => {
+            if cur == 1 {
+                // 左右失衡
+                let mut cur = top.left.take().unwrap();
+                let mut new_top = cur.right.take().unwrap();
+                new_top.left = Some(cur);
+                new_top.right = Some(top);
+                new_top
+            } else if cur == -1 {
+                // 左左失衡
+                let mut new_top = top.left.take().unwrap();
+                new_top.right = Some(top);
+                new_top
+            } else {
+                top
+            }
+        },
+        _ => top
+    };
+    top.reset_factor();
+    Some(top)
+}
+
 struct PathNode {
     path: &'static str,
     regex: Regex,
@@ -101,8 +132,8 @@ struct PathNode {
     level: usize,
     tags:Vec<String>,
     len: usize,
+    factor: i64,
 }
-
 
 impl PathNode {
 
@@ -141,7 +172,8 @@ impl PathNode {
             right: None,
             level,
             tags,
-            len: 0
+            len: 0,
+            factor: 0
         }
     }
 
@@ -165,6 +197,20 @@ impl PathNode {
         }
     }
 
+    fn left_factor(&self) -> i64 {
+        match &self.left {
+            Some(ln) => ln.factor(),
+            None => 0,
+        }
+    }
+
+    fn right_factor(&self) -> i64 {
+        match &self.right {
+            Some(ln) => ln.factor(),
+            None => 0,
+        }
+    }
+
     // for test
     fn println_path(&self) {
         match &self.left {
@@ -184,33 +230,75 @@ impl PathNode {
         }
     }
 
-    fn into_val(self: Box<Self>) -> PathNode {
-        Box::into_inner(self)
+    fn get_left(&mut self) -> Option<Box<PathNode>> {
+        self.left.take()
     }
 
-    fn add_node(&mut self, mut other: PathNode) {
+    fn get_right(&mut self) -> Option<Box<PathNode>> {
+        self.right.take()
+    }
+
+    fn add_node(&mut self, mut other: PathNode) -> (i64, i64) {
         if self < &mut other {
-            match &mut self.left {
-                Some(n) => {
-                    n.add_node(other);
+            match self.get_left() {
+                Some(mut n) => {
+                    let (p, c) = n.add_node(other);
+                    let v_top = balance(n, (p, c));
+                    self.left = v_top;
+                    self.reset_factor();
+                    let left_height = self.left_height();
+                    let right_height = self.right_height();
+                    (right_height - left_height, p)
                 },
                 None => {
                     self.left = Some(Box::new(other));
+                    let right_height = self.right_height();
+                    (right_height - 1, 0)
                 },
             }
         } else if self > &mut other {
-            match &mut self.right {
-                Some(n) => {
-                    n.add_node(other);
+            match self.get_right() {
+                Some(mut n) => {
+                    let (p, c) = n.add_node(other);
+                    let v_top = balance(n, (p, c));
+                    self.right = v_top;
+                    self.reset_factor();
+                    let left_height = self.left_height();
+                    let right_height = self.right_height();
+                    (right_height - left_height, p)
                 },
                 None => {
                     self.right = Some(Box::new(other));
+                    self.reset_factor();
+                    let left_height = self.left_height();
+                    (1 - left_height, 0)
                 },
             }
+        } else {
+            // ==
+            (0, 0)
         }
-        else if self == &mut other {
-            // do nothing
+
+    }
+
+    fn reset_factor(&mut self) {
+        match &mut self.left {
+            Some(n) => {
+                n.reset_factor();
+            },
+            None => {},
         }
+        match &mut self.right {
+            Some(n) => {
+                n.reset_factor();
+            },
+            None => {},
+        }
+        self.factor = self.right_height() - self.left_height();
+    }
+
+    fn factor(&self) -> i64 {
+        self.factor
     }
 
     fn pattern(&self, path: &str, deep: usize) -> bool {
@@ -278,7 +366,6 @@ fn cmp_tree() {
     let node1 = PathNode::new("/getById/:id");
     let node2 = PathNode::new("/getByName/:name");
     let node3 = PathNode::new("/:age/:name/:id");
-    let node4 = PathNode::new("/getByName/:name");
     let node5 = PathNode::new("/asdfsdf/:id");
     let node6 = PathNode::new("/acdfsdf/:id");
     let node7 = PathNode::new("/aadfsdf/:id");
@@ -286,15 +373,12 @@ fn cmp_tree() {
     tree.add_node(node1);
     tree.add_node(node2);
     tree.add_node(node3);
-    tree.add_node(node4);
     tree.add_node(node5);
     tree.add_node(node6);
-    tree.add_node(node7);
 
     tree.println_node();
 
-    let height: &i64 = &tree.height();
-    println!("height: {}", height);
+
 }
 
 

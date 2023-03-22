@@ -1,5 +1,7 @@
 #![feature(box_into_inner)]
 
+extern crate core;
+
 mod error;
 mod resp;
 mod path;
